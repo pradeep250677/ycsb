@@ -6,4 +6,5 @@ db/*/lib/*
 !db/*/lib/README
 *.iml
 .idea
+db/*/bin/*
 
