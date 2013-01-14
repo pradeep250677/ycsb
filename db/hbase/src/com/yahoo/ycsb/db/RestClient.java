@@ -115,13 +115,7 @@ public class RestClient extends com.yahoo.ycsb.DB
             } else {
               cluster.add(s, config.getInt("stargate.port", 8080));
             }
-
-            //2 suggestions from http://ryantwopointoh.blogspot.com/2009/01/performance-of-hbase-importing.html
-            //_hTable.setAutoFlush(false);
-            //_hTable.setWriteBufferSize(1024*1024*12);
-            //return hTable;
         }
-
     }
 
     /**

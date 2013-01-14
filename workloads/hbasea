@@ -1,11 +1,11 @@
 
-recordcount=3000000
-operationcount=30000
+recordcount=30000
+operationcount=3000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
-readproportion=1
+readproportion=0.9
 updateproportion=0
-scanproportion=0
+scanproportion=0.1
 insertproportion=0
 
 requestdistribution=zipfian
