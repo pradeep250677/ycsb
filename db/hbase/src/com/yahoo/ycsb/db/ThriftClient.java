@@ -36,6 +36,7 @@ import org.apache.hadoop.hbase.thrift.generated.Hbase.Client;
 import org.apache.hadoop.hbase.thrift.generated.Mutation;
 import org.apache.hadoop.hbase.thrift.generated.TCell;
 import org.apache.hadoop.hbase.thrift.generated.TRowResult;
+import org.apache.hadoop.hbase.thrift.generated.TScan;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.thrift.protocol.TBinaryProtocol;
 import org.apache.thrift.protocol.TProtocol;
@@ -62,7 +63,6 @@ public class ThriftClient extends com.yahoo.ycsb.DB
     public TTransport _transport=null;
     public String _columnFamily="";
     public byte _columnFamilyBytes[];
-    public List<ByteBuffer> _columns;
 
     public static final int Ok=0;
     public static final int ServerError=-1;
@@ -90,8 +90,6 @@ public class ThriftClient extends com.yahoo.ycsb.DB
 		    throw new DBException("No columnfamily specified");
 	    }
       _columnFamilyBytes = Bytes.toBytes(_columnFamily);
-      _columns = new ArrayList<ByteBuffer>();
-      _columns.add(ByteBuffer.wrap(_columnFamilyBytes));
 
     }
 
@@ -170,7 +168,16 @@ public class ThriftClient extends com.yahoo.ycsb.DB
 		System.out.println("Doing read from HBase columnfamily "+_columnFamily);
 		System.out.println("Doing read for key: "+key);
 	    }
-          r = _client.getRowWithColumns(_tableName, ByteBuffer.wrap(Bytes.toBytes(key)), _columns, null);
+	        List<ByteBuffer> columns = new ArrayList<ByteBuffer>();
+	        columns.add(ByteBuffer.wrap(_columnFamilyBytes));
+          if (fields != null)
+          {
+              for (String field : fields)
+              {
+                columns.add(ByteBuffer.wrap(Bytes.toBytes(field)));
+              }
+          }
+          r = _client.getRowWithColumns(_tableName, ByteBuffer.wrap(Bytes.toBytes(key)), columns, null);
         }
         catch (Throwable e)
         {
@@ -219,10 +226,24 @@ public class ThriftClient extends com.yahoo.ycsb.DB
             }
         }
 
+        TScan scan = new TScan();
+        scan.setCaching(recordcount);
+
+        //add specified fields or else all fields
+        scan.addToColumns(ByteBuffer.wrap(_columnFamilyBytes));
+        if (fields != null)
+        {
+            for (String field : fields)
+            {
+                scan.addToColumns(ByteBuffer.wrap(Bytes.toBytes(field)));
+            }
+        }
+
         //get results
         int scanner = -1;
         try {
-            scanner = _client.scannerOpen(_tableName, ByteBuffer.wrap(Bytes.toBytes(startkey)), _columns, null);
+            scan.setStartRow(ByteBuffer.wrap(Bytes.toBytes(startkey)));
+            scanner = _client.scannerOpenWithScan(_tableName, scan, null);
             int numResults = 0;
             for (List<TRowResult> rr = _client.scannerGet(scanner); rr != null && !rr.isEmpty(); rr = _client.scannerGet(scanner))
             {
