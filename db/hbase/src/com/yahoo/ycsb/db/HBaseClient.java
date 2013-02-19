@@ -21,7 +21,6 @@ package com.yahoo.ycsb.db;
 import com.yahoo.ycsb.DBException;
 import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.ByteArrayByteIterator;
-import com.yahoo.ycsb.StringByteIterator;
 
 import java.io.IOException;
 import java.util.*;
@@ -50,9 +49,7 @@ import org.apache.hadoop.hbase.HBaseConfiguration;
  */
 public class HBaseClient extends com.yahoo.ycsb.DB
 {
-    // BFC: Change to fix broken build (with HBase 0.20.6)
-    //private static final Configuration config = HBaseConfiguration.create();
-    private static final HBaseConfiguration config = new HBaseConfiguration();
+    private static final Configuration config = HBaseConfiguration.create();
 
     public boolean _debug=false;
 

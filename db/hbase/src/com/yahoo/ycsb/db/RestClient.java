@@ -58,6 +58,8 @@ public class RestClient extends com.yahoo.ycsb.DB
     public RemoteHTable _hTable=null;
     public String _columnFamily="";
     public byte _columnFamilyBytes[];
+    public final int maxBatch = config.getInt("hbase.rest.batch.max", Integer.MAX_VALUE);
+    public final boolean caching = config.getBoolean("hbase.rest.caching", true);
 
     public static final int Ok=0;
     public static final int ServerError=-1;
@@ -66,7 +68,7 @@ public class RestClient extends com.yahoo.ycsb.DB
 
     public static final Object tableLock = new Object();
 
-	/**
+    /**
 	 * Initialize any state for this DB.
 	 * Called once per DB instance; there is one DB instance per client thread.
 	 */
@@ -215,7 +217,9 @@ public class RestClient extends com.yahoo.ycsb.DB
         Scan s = new Scan(Bytes.toBytes(startkey));
         //HBase has no record limit.  Here, assume recordcount is small enough to bring back in one call.
         //We get back recordcount records
-        s.setCaching(recordcount);
+        if (caching) {
+          s.setCaching(recordcount);
+        }
 
         //add specified fields or else all fields
         if (fields == null)
@@ -232,31 +236,47 @@ public class RestClient extends com.yahoo.ycsb.DB
 
         //get results
         ResultScanner scanner = null;
+        int rows = Math.max(recordcount, 1);
+        if (maxBatch > 0 && maxBatch < rows) {
+          rows = maxBatch;
+        }
         try {
             scanner = _hTable.getScanner(s);
             int numResults = 0;
-            for (Result rr = scanner.next(); rr != null; rr = scanner.next())
+            for (Result[] rrs = scanner.next(rows);
+              rrs != null && rrs.length > 0; rrs = scanner.next(rows))
             {
-                //get row key
-                String key = Bytes.toString(rr.getRow());
-                if (_debug)
-                {
-                    System.out.println("Got scan result for key: "+key);
+                for (Result rr: rrs) {
+                  //get row key
+                  String key = Bytes.toString(rr.getRow());
+                  if (_debug)
+                  {
+                      System.out.println("Got scan result for key: "+key);
+                  }
+
+                  HashMap<String,ByteIterator> rowResult = new HashMap<String, ByteIterator>();
+
+                  for (KeyValue kv : rr.raw()) {
+                    rowResult.put(
+                        Bytes.toString(kv.getQualifier()),
+                        new ByteArrayByteIterator(kv.getValue()));
+                  }
+                  //add rowResult to result vector
+                  result.add(rowResult);
+                  numResults++;
+                  if (numResults >= recordcount) //if hit recordcount, bail out
+                  {
+                      break;
+                  }
                 }
 
-                HashMap<String,ByteIterator> rowResult = new HashMap<String, ByteIterator>();
-
-                for (KeyValue kv : rr.raw()) {
-                  rowResult.put(
-                      Bytes.toString(kv.getQualifier()),
-                      new ByteArrayByteIterator(kv.getValue()));
-                }
-                //add rowResult to result vector
-                result.add(rowResult);
-                numResults++;
                 if (numResults >= recordcount) //if hit recordcount, bail out
                 {
                     break;
+                }
+                rows = recordcount - numResults;
+                if (maxBatch > 0 && maxBatch < rows) {
+                  rows = maxBatch;
                 }
             } //done with row
 
