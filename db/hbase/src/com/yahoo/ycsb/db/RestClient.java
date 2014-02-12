@@ -116,7 +116,7 @@ public class RestClient extends com.yahoo.ycsb.DB
     {
         synchronized (tableLock) {
             Cluster cluster = new Cluster();
-            _hTable = new RemoteHTable(new Client(cluster), config, table, null);
+            _hTable = new RemoteHTable(new Client(cluster), config, table);
 
             String s = config.get("stargate.hostname", "localhost");
             if (s.contains(":")) {
