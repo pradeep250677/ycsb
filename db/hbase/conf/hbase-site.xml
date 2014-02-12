@@ -25,17 +25,17 @@
 <configuration>
   <property>
     <name>hbase.master</name>
-    <value>c1526.hal.cloudera.com:60000</value>
+    <value>a1806.halxg.cloudera.com:36000</value>
     <description>The host and port that the HBase master runs at.
     </description>
   </property>
   <property>
     <name>hbase.zookeeper.property.clientPort</name>
-    <value>2181</value>
+    <value>35181</value>
   </property>
   <property>
     <name>hbase.zookeeper.quorum</name>
-    <value>c1526.hal.cloudera.com</value>
+    <value>a1806.halxg.cloudera.com</value>
   </property>
   <property>
     <name>hbase.rpc.timeout</name>
@@ -44,20 +44,20 @@
 
   <property>
     <name>stargate.hostname</name>
-    <value>c1526.hal.cloudera.com</value>
+    <value>a1806.halxg.cloudera.com</value>
   </property>
   <property>
     <name>stargate.port</name>
-    <value>8080</value>
+    <value>36080</value>
   </property>
 
   <property>
     <name>thrift.hostname</name>
-    <value>c1526.hal.cloudera.com</value>
+    <value>a1806.halxg.cloudera.com</value>
   </property>
   <property>
     <name>thrift.port</name>
-    <value>9090</value>
+    <value>36090</value>
   </property>
   <property>
     <name>hbase.client.keyvalue.maxsize</name>
