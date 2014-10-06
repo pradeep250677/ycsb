@@ -3,12 +3,14 @@ recordcount=30000
 operationcount=3000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
-readproportion=0.9
+readproportion=1
 updateproportion=0
-scanproportion=0.1
+scanproportion=0
 insertproportion=0
 
 requestdistribution=zipfian
 
 columnfamily=f
 
+#rollingrestart.initsleep=300
+#rollingrestart.sleep=120

@@ -18,35 +18,53 @@
 package com.yahoo.ycsb.db;
 
 
-import com.yahoo.ycsb.DBException;
-import com.yahoo.ycsb.ByteIterator;
-import com.yahoo.ycsb.ByteArrayByteIterator;
-
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.ConcurrentModificationException;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Random;
+import java.util.Set;
 //import java.util.HashMap;
 //import java.util.Properties;
 //import java.util.Set;
 //import java.util.Vector;
+import java.util.Vector;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.ClusterManager;
+import org.apache.hadoop.hbase.ClusterStatus;
+import org.apache.hadoop.hbase.DistributedHBaseCluster;
+import org.apache.hadoop.hbase.HBaseCluster;
+import org.apache.hadoop.hbase.HBaseClusterManager;
+import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.KeyValue;
-import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.client.Delete;
 //import org.apache.hadoop.hbase.client.Scanner;
 import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Put;
-import org.apache.hadoop.hbase.client.Delete;
-import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
+import org.apache.hadoop.hbase.client.Scan;
 //import org.apache.hadoop.hbase.io.Cell;
 //import org.apache.hadoop.hbase.io.RowResult;
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.util.ReflectionUtils;
+
+import com.yahoo.ycsb.ByteArrayByteIterator;
+import com.yahoo.ycsb.ByteIterator;
+import com.yahoo.ycsb.DBException;
 
 /**
  * HBase client for YCSB framework
  */
+@SuppressWarnings("deprecation")
 public class HBaseClient extends com.yahoo.ycsb.DB
 {
     private static final Configuration config = HBaseConfiguration.create();
@@ -64,6 +82,12 @@ public class HBaseClient extends com.yahoo.ycsb.DB
     public static final int NoMatchingRecord=-3;
 
     public static final Object tableLock = new Object();
+
+    private static Thread rollingRestarter;
+
+    private static final String HBASE_CLUSTER_MANAGER_CLASS = "hbase.it.clustermanager.class";
+    private static final Class<? extends ClusterManager> DEFAULT_HBASE_CLUSTER_MANAGER_CLASS = 
+      HBaseClusterManager.class;
 
 	/**
 	 * Initialize any state for this DB.
@@ -85,6 +109,113 @@ public class HBaseClient extends com.yahoo.ycsb.DB
 	    }
       _columnFamilyBytes = Bytes.toBytes(_columnFamily);
 
+      if (getProperties().getProperty("rollingrestart.initsleep") == null) {
+        return; // No more further initialization
+      }
+
+      synchronized (HBaseClient.class) {
+        if (rollingRestarter == null) {
+          rollingRestarter = startRollingRestarter();
+        }
+      }
+	  }
+
+    private Thread startRollingRestarter() {
+      // Restart region servers one by one periodically
+      Thread rollingRestarter = new Thread() {
+        HBaseCluster cluster;
+        int currentServer;
+        ServerName master;
+
+        @Override
+        public void run() {
+          try {
+            System.out.println("Rolling restarter started");
+            Class<? extends ClusterManager> clusterManagerClass = config.getClass(
+              HBASE_CLUSTER_MANAGER_CLASS,
+              DEFAULT_HBASE_CLUSTER_MANAGER_CLASS, ClusterManager.class);
+            ClusterManager clusterManager = ReflectionUtils.newInstance(
+              clusterManagerClass, config);
+            cluster = new DistributedHBaseCluster(config, clusterManager);
+            String tmp = getProperties().getProperty("rollingrestart.initsleep");
+            long time = Long.parseLong(tmp) * 1000;
+            Thread.sleep(time);
+            tmp = getProperties().getProperty("rollingrestart.sleep");
+            time = Long.parseLong(tmp) * 1000;
+            while (true) {
+              Thread.sleep(time);
+              try {
+                restart(getNextServer());
+              } catch (IOException ioe) {
+                System.out.println("Failed to restart a server due to " + ioe.getMessage());
+                ioe.printStackTrace(System.err);
+              }
+            }
+          } catch (Throwable t) {
+            t.printStackTrace();
+          }
+          System.out.println("Rolling restarter exited");
+        }
+
+        ServerName getNextServer() throws IOException {
+          ClusterStatus clusterStatus = cluster.getClusterStatus();
+          Collection<ServerName> regionServers = clusterStatus.getServers();
+          int count = regionServers == null ? 0 : regionServers.size();
+          if (count <= 0) {
+            return null;
+          }
+          master = clusterStatus.getMaster();
+          ArrayList<ServerName> tmp =
+            new ArrayList<ServerName>(regionServers);
+          Collections.sort(tmp); // Sort it so that we use fixed order
+          currentServer = (currentServer + 1) % count;
+          return tmp.get(currentServer);
+        }
+
+        void restart(ServerName server) throws IOException {
+          if (server == null) {
+            System.out.println("Skipped restarting null server");
+            return;
+          }
+
+          if (server.equals(master)) {
+            restartMaster(server);
+          } else {
+            restartRegionServer(server);
+          }
+        }
+
+        void restartMaster(ServerName server) throws IOException {
+          System.out.println("Killing master: " + server);
+          cluster.killMaster(server);
+          cluster.waitForMasterToStop(server, 60000);
+          System.out.println("Killed master: " + server);
+
+          System.out.println("Starting master: " + server.getHostname());
+          cluster.startMaster(server.getHostname());
+          cluster.waitForActiveAndReadyMaster(60000);
+          System.out.println("Started master: " + server);
+        }
+
+        void restartRegionServer(ServerName server) throws IOException {
+          System.out.println("Killing region server: " + server);
+          cluster.killRegionServer(server);
+          cluster.waitForRegionServerToStop(server, 60000);
+          System.out.println("Killed region server: "
+            + server + ". Reported num of rs: "
+            + cluster.getClusterStatus().getServersSize());
+
+          System.out.println("Starting region server: " + server.getHostname());
+          cluster.startRegionServer(server.getHostname());
+          cluster.waitForRegionServerToStart(server.getHostname(), 60000);
+          System.out.println("Started region server: "
+            + server + ". Reported num of rs: "
+            + cluster.getClusterStatus().getServersSize());
+        }
+      };
+      rollingRestarter.setDaemon(true);
+      rollingRestarter.start();
+      return rollingRestarter;
     }
 
     /**
