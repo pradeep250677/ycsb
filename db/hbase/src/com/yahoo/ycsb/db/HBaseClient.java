@@ -167,6 +167,9 @@ public class HBaseClient extends com.yahoo.ycsb.DB
           master = clusterStatus.getMaster();
           ArrayList<ServerName> tmp =
             new ArrayList<ServerName>(regionServers);
+          if (!tmp.contains(master)) {
+            tmp.add(master);
+          }
           Collections.sort(tmp); // Sort it so that we use fixed order
           currentServer = (currentServer + 1) % count;
           return tmp.get(currentServer);
