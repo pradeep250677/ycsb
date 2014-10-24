@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.ConcurrentModificationException;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Random;
@@ -42,6 +43,7 @@ import org.apache.hadoop.hbase.DistributedHBaseCluster;
 import org.apache.hadoop.hbase.HBaseCluster;
 import org.apache.hadoop.hbase.HBaseClusterManager;
 import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.ServerName;
 import org.apache.hadoop.hbase.client.Delete;
@@ -52,6 +54,7 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.protobuf.ProtobufUtil;
 //import org.apache.hadoop.hbase.io.Cell;
 //import org.apache.hadoop.hbase.io.RowResult;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -172,7 +175,36 @@ public class HBaseClient extends com.yahoo.ycsb.DB
           }
           Collections.sort(tmp); // Sort it so that we use fixed order
           currentServer = (currentServer + 1) % count;
-          return tmp.get(currentServer);
+          ServerName server = tmp.get(currentServer);
+          if (server.equals(master)) {
+            return master;
+          }
+          // Return the region server with most of regions.
+          // Otherwise, all regions may stick with one server
+          // that not restarted for a while
+          int regionCount = -1;
+          List<HRegionInfo> regions;
+          for (ServerName sn: tmp) {
+            if (sn.equals(master)) {
+              continue;
+            }
+            try {
+              regions = ProtobufUtil.getOnlineRegions(
+                cluster.getAdminProtocol(sn));
+            } catch (IOException ie) {
+              // Can't talk to this region server
+              continue;
+            }
+            if (regions == null || regions.isEmpty()) {
+              continue;
+            }
+            count = regions.size();
+            if (count > regionCount) {
+              regionCount = count;
+              server = sn;
+            }
+          }
+          return server;
         }
 
         void restart(ServerName server) throws IOException {
