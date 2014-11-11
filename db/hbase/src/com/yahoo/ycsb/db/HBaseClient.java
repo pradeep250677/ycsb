@@ -143,12 +143,14 @@ public class HBaseClient extends com.yahoo.ycsb.DB
             String tmp = getProperties().getProperty("rollingrestart.initsleep");
             long time = Long.parseLong(tmp) * 1000;
             Thread.sleep(time);
+            tmp = getProperties().getProperty("rollingrestart.excludemaster");
+            boolean excludeMaster = "true".equalsIgnoreCase(tmp);
             tmp = getProperties().getProperty("rollingrestart.sleep");
             time = Long.parseLong(tmp) * 1000;
             while (true) {
               Thread.sleep(time);
               try {
-                restart(getNextServer());
+                restart(getNextServer(excludeMaster));
               } catch (IOException ioe) {
                 System.out.println("Failed to restart a server due to " + ioe.getMessage());
                 ioe.printStackTrace(System.err);
@@ -160,21 +162,25 @@ public class HBaseClient extends com.yahoo.ycsb.DB
           System.out.println("Rolling restarter exited");
         }
 
-        ServerName getNextServer() throws IOException {
+        ServerName getNextServer(boolean excludeMaster) throws IOException {
           ClusterStatus clusterStatus = cluster.getClusterStatus();
           Collection<ServerName> regionServers = clusterStatus.getServers();
-          int count = regionServers == null ? 0 : regionServers.size();
-          if (count <= 0) {
+          if (regionServers == null) {
             return null;
           }
           master = clusterStatus.getMaster();
           ArrayList<ServerName> tmp =
             new ArrayList<ServerName>(regionServers);
-          if (!tmp.contains(master)) {
+          if (excludeMaster) {
+            tmp.remove(master);
+          } else if (!tmp.contains(master)) {
             tmp.add(master);
           }
+          if (tmp.isEmpty()) {
+            return null;
+          }
           Collections.sort(tmp); // Sort it so that we use fixed order
-          currentServer = (currentServer + 1) % count;
+          currentServer = (currentServer + 1) % tmp.size();
           ServerName server = tmp.get(currentServer);
           if (server.equals(master)) {
             return master;
@@ -198,7 +204,7 @@ public class HBaseClient extends com.yahoo.ycsb.DB
             if (regions == null || regions.isEmpty()) {
               continue;
             }
-            count = regions.size();
+            int count = regions.size();
             if (count > regionCount) {
               regionCount = count;
               server = sn;
