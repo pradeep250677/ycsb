@@ -1,11 +1,11 @@
 
 recordcount=10000000
 operationcount=150000
-#maxexecutiontime=18000
+maxexecutiontime=18000
 workload=com.yahoo.ycsb.workloads.CoreWorkload
 
-readproportion=1
-updateproportion=0
+readproportion=0
+updateproportion=1
 scanproportion=0
 insertproportion=0
 
@@ -14,5 +14,5 @@ requestdistribution=zipfian
 columnfamily=f
 
 rollingrestart.excludemaster=true
-#rollingrestart.initsleep=10
-#rollingrestart.sleep=30
+rollingrestart.initsleep=10
+rollingrestart.sleep=30
